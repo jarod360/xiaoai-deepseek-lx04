@@ -310,7 +310,9 @@ func (mt *XiaoMi) MiTTSContext(ctx context.Context, message string) error {
 	}
 	if mt.config.UseCommand {
 		t := mt.hardwareCommand(TTSIndex)
-		c, err := mt.miioService.MiotActionContext(ctx, mt.config.MiDID /*.deviceID*/, actionId(t), []interface{}{message})
+		ids := actionId(t)
+		if len(ids) != 2 { return fmt.Errorf("invalid TTS action id") }
+		c, err := mt.miioService.MiotActionMiGPT(ctx, mt.config.MiDID, ids[0], ids[1], []interface{}{message})
 		log.Debug("TTS command result", c, err)
 		if err != nil {
 			return fmt.Errorf("TTS命令执行失败: %w", err)
