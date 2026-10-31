@@ -369,12 +369,12 @@ func (ma *Account) RequestContext(ctx context.Context, sid, u string, data url.V
 	if resp.StatusCode == http.StatusTooManyRequests {
 		retryAfter := strings.TrimSpace(resp.Header.Get("Retry-After"))
 		if retryAfter == "" {
-			return errors.New("Xiaomi API request failed (HTTP 429, Retry-After absent)")
+			return fmt.Errorf("Xiaomi API request failed (HTTP 429, endpoint %s%s, Retry-After absent)", req.URL.Hostname(), req.URL.EscapedPath())
 		}
 		if len(retryAfter) > 80 {
 			retryAfter = retryAfter[:80]
 		}
-		return fmt.Errorf("Xiaomi API request failed (HTTP 429, Retry-After %q)", retryAfter)
+		return fmt.Errorf("Xiaomi API request failed (HTTP 429, endpoint %s%s, Retry-After %q)", req.URL.Hostname(), req.URL.EscapedPath(), retryAfter)
 	}
 	return fmt.Errorf("Xiaomi API request failed (HTTP %d, code %d)", resp.StatusCode, apiCode)
 }
