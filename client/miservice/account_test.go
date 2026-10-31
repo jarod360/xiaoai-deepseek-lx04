@@ -37,3 +37,41 @@ func TestAPICallUsesOnlyRequestedServiceToken(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestXiaomiRateLimitIncludesRetryAfterWithoutRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name, retryAfter, want string
+	}{
+		{"with header", "120", "Retry-After \"120\""},
+		{"without header", "", "Retry-After absent"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := NewAccount("unused", "unused", nil)
+			a.token = NewTokens()
+			a.token.UserId = "test"
+			a.token.Sids["xiaomiio"] = SidToken{ServiceToken: "test"}
+			calls := 0
+			a.client.Transport = otpTransport(func(r *http.Request) (*http.Response, error) {
+				calls++
+				h := make(http.Header)
+				if tc.retryAfter != "" {
+					h.Set("Retry-After", tc.retryAfter)
+				}
+				return &http.Response{
+					StatusCode: http.StatusTooManyRequests,
+					Header: h,
+					Body: io.NopCloser(strings.NewReader("limited")),
+					Request: r,
+				}, nil
+			})
+			var out map[string]any
+			err := a.Request("xiaomiio", "https://api.io.mi.com/app/miotspec/action", nil, nil, nil, false, &out)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if calls != 1 {
+				t.Fatalf("HTTP 429 must not retry: got %d requests", calls)
+			}
+		})
+	}
+}
