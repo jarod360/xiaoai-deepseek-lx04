@@ -18,6 +18,7 @@ func (s *IOService) MiotActionMiGPT(ctx context.Context, did string, siid, aiid 
  t:=a.token
  sid:=t.Sids[MIIO_SID]
  if sid.Ssecurity==""||sid.ServiceToken=="" {return -1,errors.New("xiaomiio credential incomplete")}
+ if t.CUserId=="" {return -1,errors.New("mi-gpt RC4 comparison requires cUserId in saved Xiaomi token; no request sent")}
  const path="/miotspec/action"
  nonce:=genNonce()
  if nonce=="" {return -1,errors.New("nonce unavailable")}
