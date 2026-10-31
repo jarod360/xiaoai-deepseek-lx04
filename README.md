@@ -2,7 +2,7 @@
 
 **给老款小爱触屏音箱接入 DeepSeek，保留原生天气、穿衣建议和米家控制。**
 
-[![CI](https://github.com/Goldloli/xiaoai-deepseek-lx04/actions/workflows/ci.yml/badge.svg)](https://github.com/Goldloli/xiaoai-deepseek-lx04/actions/workflows/ci.yml)
+[![CI](https://github.com/jarod360/xiaoai-deepseek-lx04/actions/workflows/ci.yml/badge.svg)](https://github.com/jarod360/xiaoai-deepseek-lx04/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0%20%2B%20GPL--3.0-blue)](THIRD_PARTY.md)
 
 [English](README.en.md) · [部署指南](docs/部署指南.md) · [完整技术报告](docs/改造过程与修改技术报告.md) · [兼容性与恢复](docs/兼容性与恢复.md)
@@ -15,6 +15,32 @@
 | 关灯、播放音乐、设置闹钟 | 原生小爱 |
 | 彩虹是怎么形成的？唐朝人穿什么？ | DeepSeek |
 | 现在排名靠前的大模型有哪些？ | DeepSeek 搜索后依据资料回答 |
+
+## 2026-10-31 RC4 TTS 修复：基于 Work 实机源码整合
+
+本次基底来自用户上传的 `xiaoseek.zip`，保留此前在音箱运行过的关键实现，不再用公开仓库原有的监听器覆盖 Work 修改：
+
+- `client/cmd/lx04-agent/speech_listener.go`：logcat EOF 或中断后的自动重连，期间保留已认证的会话。
+- `client/cmd/lx04-agent/doorbell.go`：本机门铃接收器状态检查、抢占取消及短暂恢复保护。接收器不可用时默认暂停 AI 答复，以免抢占门铃。
+- `scripts/device-supervise.sh`：进程退出后自动拉起和有上限的指数退避；`disabled` 标记使守护循环停止。
+- `scripts/device-service.sh`：Magisk 开机启动入口指向 `supervise.sh`；`device-run.sh` 继续提供 DNS、Android CA 及音频恢复环境。
+- 原有本机 ASR、原生天气/米家分流、DeepSeek 联网搜索、静音门控、取消/恢复与日志处理保持原来的责任分工。
+
+### TTS 协议：仅使用 RC4，不回退旧 TTS
+
+`XiaoMi.MiTTSContext()` 的 UseCommand TTS 路径调用 `IOService.MiotActionMiGPT()`，原 TTS HMAC 请求不再参与这一调用。请求完整包含 RC4-drop1024、双层 SHA1 签名、12 字节加密随机 nonce、`datasource=2`、MICO User-Agent、MIoT Header 和 Xiaomi Cookie；响应使用 RC4 解密，按服务端指示处理 GZIP。
+
+- 继续使用原有 `xiaomiio` SID、`ssecurity` 和 `serviceToken`；登录响应中的 `cUserId` 会被保存，已有旧 Token 仍可加载。
+- HTTP 429 和其他错误只返回错误，**不自动重试、不切回旧协议**，避免叠加云端请求。
+- `agent.answer()` 传递回答上下文到网络调用，门铃抢占或会话取消时可中断正在等待的请求。
+- **非 TTS 的 MIoT 设备操作保留原接口**，避免把 TTS 实验协议推广到无关操作。
+- 保留 TLS 证书校验；音箱启动环境需提供 `SSL_CERT_DIR=/system/etc/security/cacerts` 和有效 `XIAOBOT_DNS_SERVER`。
+
+### 已验证与未验证
+
+2026-10-31，在中国版 LX04 上，**独立的** `lx04-ttscheck -protocol migpt-rc4 -speak` 实测获得 `MIoT 5-1 accepted (code 0)`，且音箱实际播报了“DeepSeek 播报诊断测试。”；原旧协议此前曾返回 HTTP 429。这证明该协议组合在本次测试下可用，尚**不能证明**是哪一个字段导致旧 429，亦不代表服务端永不限流。
+
+**新集成版**与此前独立测试程序不同：即使 GitHub Actions 构建成功，也还需要在音箱上做完整自然语言问答、门铃抢占、logcat 断线重连、音频恢复和开机守护的回归测试。部署之前请保留旧二进制、配置、Token 和启动脚本备份，避免直接覆盖正在运行的程序。
 
 ## 验证范围
 
@@ -43,7 +69,7 @@ flowchart LR
 需要 Git、Make、Python 3 和 `.go-version` 指定的 Go。仅编译不需要音箱或账号。
 
 ```sh
-git clone https://github.com/Goldloli/xiaoai-deepseek-lx04.git
+git clone https://github.com/jarod360/xiaoai-deepseek-lx04.git
 cd xiaoai-deepseek-lx04
 make test
 make build
@@ -70,10 +96,10 @@ make build
 
 ## 使用与维护
 
-见[使用与维护](docs/使用与维护.md)。附加程序可停用，并提供播放状态恢复入口。当前没有多轮对话记忆、屏幕回答展示或完整崩溃监管；主播放静音会暂时影响其他播放，规则也可能误分流。搜索与模型调用会产生费用，以 [DeepSeek 官方文档](https://api-docs.deepseek.com/guides/search/)及账户实际可用接口为准。
+见[使用与维护](docs/使用与维护.md)。附加程序可停用，并提供播放状态恢复入口。当前没有多轮对话记忆或屏幕回答展示；内置自动拉起守护脚本；主播放静音会暂时影响其他播放，规则也可能误分流。搜索与模型调用会产生费用，以 [DeepSeek 官方文档](https://api-docs.deepseek.com/guides/search/)及账户实际可用接口为准。
 
 ## 开源与致谢
 
 默认 [Apache 2.0](LICENSE)；mtkclient 补丁及五个底层脚本为 GPL-3.0-only，MiService 保留 MIT。范围、固定提交和原作者署名见 [THIRD_PARTY.md](THIRD_PARTY.md) 与 [NOTICE](NOTICE)。感谢 xiaobot、ninego、xiaogpt、MiService、mtkclient、Magisk 及相关社区的工作。
 
-欢迎通过 [Issue](https://github.com/Goldloli/xiaoai-deepseek-lx04/issues) 提交脱敏后的复现信息，通过 PR 改进适配。参见[贡献指南](CONTRIBUTING.md)和[安全说明](SECURITY.md)。项目与小米、DeepSeek 无官方关联。
+欢迎通过 [Issue](https://github.com/jarod360/xiaoai-deepseek-lx04/issues) 提交脱敏后的复现信息，通过 PR 改进适配。参见[贡献指南](CONTRIBUTING.md)和[安全说明](SECURITY.md)。项目与小米、DeepSeek 无官方关联。

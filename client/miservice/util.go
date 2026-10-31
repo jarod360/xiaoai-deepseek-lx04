@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/big"
 	"net/url"
 	"strconv"
 	"strings"
@@ -18,15 +19,17 @@ import (
 	"unicode"
 )
 
-var r = rand.New(rand.NewSource(time.Now().UnixNano()))
-
 func getRandom(length int) string {
-	charset := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	randomStr := make([]byte, length)
-	for i := range randomStr {
-		randomStr[i] = charset[r.Intn(len(charset))]
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, length)
+	for i := range b {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			return ""
+		}
+		b[i] = charset[n.Int64()]
 	}
-	return string(randomStr)
+	return string(b)
 }
 
 func signNonce(ssecurity string, nonce string) (string, error) {
@@ -48,7 +51,7 @@ func signNonce(ssecurity string, nonce string) (string, error) {
 
 var genNonce = func() string {
 	nonce := make([]byte, 12)
-	_, err := rand.Read(nonce[:8])
+	_, err := io.ReadFull(rand.Reader, nonce[:8])
 	if err != nil {
 		return ""
 	}

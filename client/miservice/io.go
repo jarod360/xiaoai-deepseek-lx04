@@ -1,6 +1,7 @@
 package miservice
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -24,6 +25,10 @@ func NewIOService(account *Account, region *string) *IOService {
 }
 
 func (s *IOService) Request(uri string, data map[string]interface{}) (map[string]interface{}, error) {
+	return s.RequestContext(context.Background(), uri, data)
+}
+
+func (s *IOService) RequestContext(ctx context.Context, uri string, data map[string]interface{}) (map[string]interface{}, error) {
 	prepareData := func(token *Tokens, cookies map[string]string) url.Values {
 		cookies["PassportDeviceId"] = token.DeviceId
 		/*cookies["countryCode"] = "CN"
@@ -46,7 +51,7 @@ func (s *IOService) Request(uri string, data map[string]interface{}) (map[string
 		//"miot-encrypt-algorithm":     []string{"ENCRYPT-RC4"},
 	}
 	var resp map[string]interface{}
-	err := s.account.Request(MIIO_SID, s.server+uri, nil, prepareData, headers, true, &resp)
+	err := s.account.RequestContext(ctx, MIIO_SID, s.server+uri, nil, prepareData, headers, true, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -256,12 +261,16 @@ func (s *IOService) MiotSetProp(did string, iid Iid, value interface{}) (int, er
 }
 
 func (s *IOService) MiotAction(did string, iid []int, args []interface{}) (float64, error) {
-	result, err := s.MiotRequest("action", map[string]interface{}{
+	return s.MiotActionContext(context.Background(), did, iid, args)
+}
+
+func (s *IOService) MiotActionContext(ctx context.Context, did string, iid []int, args []interface{}) (float64, error) {
+	result, err := s.RequestContext(ctx, "/miotspec/action", map[string]interface{}{"params": map[string]interface{}{
 		"did":  did,
 		"siid": iid[0],
 		"aiid": iid[1],
 		"in":   args,
-	})
+	}})
 	if err != nil {
 		return -1, err
 	}

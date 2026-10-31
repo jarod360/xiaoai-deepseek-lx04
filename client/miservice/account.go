@@ -3,6 +3,7 @@
 package miservice
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha1"
 	"encoding/base64"
@@ -14,8 +15,6 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"ninego/log"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -80,6 +79,9 @@ func (ma *Account) Login(sid string) error {
 		return err
 	}
 
+	if resp.Code == 70022 {
+		return errors.New("Xiaomi account login rate limited (code 70022); no password retry attempted")
+	}
 	if resp.Code != 0 {
 		data := url.Values{
 			"_json":    {"true"},
@@ -113,6 +115,7 @@ func (ma *Account) Login(sid string) error {
 		return errors.New("Xiaomi login response lacks required credentials")
 	}
 	ma.token.UserId = fmt.Sprint(resp.UserID)
+	ma.token.CUserId = resp.CUserID
 	ma.token.PassToken = resp.PassToken
 
 	var serviceToken string
@@ -294,6 +297,19 @@ func (ma *Account) NewRequest(sid, u string, data url.Values, cb DataCb, headers
 	return req
 }
 
+// LoadCachedSID loads an existing credential without performing network login.
+// Diagnostic requests must not silently change the authentication flow.
+func (ma *Account) LoadCachedSID(sid string) error {
+ if ma.tokenStore == nil { return errors.New("cached Xiaomi credentials unavailable") }
+ tokens, err := ma.tokenStore.LoadToken()
+ if err != nil { return fmt.Errorf("load cached Xiaomi credentials: %w", err) }
+ if tokens == nil || tokens.UserName != ma.username { return errors.New("cached Xiaomi account mismatch") }
+ token, ok := tokens.Sids[sid]
+ if !ok || token.ServiceToken == "" || token.Ssecurity == "" { return errors.New("cached Xiaomi SID credentials incomplete; no login attempted") }
+ ma.token = tokens
+ return nil
+}
+
 func (ma *Account) hasSid(sid string) bool {
 	if ma.token == nil {
 		return false
@@ -303,6 +319,14 @@ func (ma *Account) hasSid(sid string) bool {
 }
 
 func (ma *Account) Request(sid, u string, data url.Values, cb DataCb, headers http.Header, reLogin bool, output any) error {
+	return ma.RequestContext(context.Background(), sid, u, data, cb, headers, reLogin, output)
+}
+
+// RequestContext allows a cancelled TTS generation to stop its in-flight MIoT call.
+func (ma *Account) RequestContext(ctx context.Context, sid, u string, data url.Values, cb DataCb, headers http.Header, reLogin bool, output any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if !ma.hasSid(sid) {
 		err := ma.Login(sid)
 		if err != nil {
@@ -310,7 +334,7 @@ func (ma *Account) Request(sid, u string, data url.Values, cb DataCb, headers ht
 		}
 	}
 	log.Debug("request token done")
-	req := ma.NewRequest(sid, u, data, cb, headers)
+	req := ma.NewRequest(sid, u, data, cb, headers).WithContext(ctx)
 	// Account-login cookies can contain another SID's serviceToken. API calls
 	// must use only the explicit cookies for the requested SID.
 	apiClient := *ma.client
@@ -330,15 +354,6 @@ func (ma *Account) Request(sid, u string, data url.Values, cb DataCb, headers ht
 		data, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return err
-		}
-		if os.Getenv("XIAOBOT_API_TRACE") == "1" && req.URL.Hostname() == "userprofile.mina.mi.com" {
-			trace := struct {
-				URL      string
-				Header   http.Header
-				Response json.RawMessage
-			}{req.URL.String(), req.Header, json.RawMessage(data)}
-			b, _ := json.Marshal(trace)
-			os.WriteFile(filepath.Join(os.Getenv("HOME"), fmt.Sprintf("api-trace-%d.json", os.Getpid())), b, 0600)
 		}
 		var result _result
 		err = json.Unmarshal(data, &result)
@@ -362,9 +377,19 @@ func (ma *Account) Request(sid, u string, data url.Values, cb DataCb, headers ht
 		if ma.tokenStore != nil {
 			ma.tokenStore.SaveToken(ma.token)
 		}
-		return ma.Request(sid, u, data, cb, headers, false, output)
+		return ma.RequestContext(ctx, sid, u, data, cb, headers, false, output)
 	}
 
+	if resp.StatusCode == http.StatusTooManyRequests {
+		retryAfter := strings.TrimSpace(resp.Header.Get("Retry-After"))
+		if retryAfter == "" {
+			return fmt.Errorf("Xiaomi API request failed (HTTP 429, endpoint %s%s, Retry-After absent)", req.URL.Hostname(), req.URL.EscapedPath())
+		}
+		if len(retryAfter) > 80 {
+			retryAfter = retryAfter[:80]
+		}
+		return fmt.Errorf("Xiaomi API request failed (HTTP 429, endpoint %s%s, Retry-After %q)", req.URL.Hostname(), req.URL.EscapedPath(), retryAfter)
+	}
 	return fmt.Errorf("Xiaomi API request failed (HTTP %d, code %d)", resp.StatusCode, apiCode)
 }
 
