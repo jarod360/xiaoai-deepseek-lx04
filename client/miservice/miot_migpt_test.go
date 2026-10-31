@@ -46,11 +46,23 @@ func TestMiGPTRC4RequestAnd429NoRetry(t *testing.T) {
  _,err:=service.MiotActionMiGPT(context.Background(),"did1",5,1,[]interface{}{"hello"})
  if err==nil||!strings.Contains(err.Error(),"429")||calls!=1 {t.Fatalf("expected one HTTP429 without retry, got %v calls=%d",err,calls)}
 }
-func TestMiGPTRC4MissingCUserIdDoesNotSend(t *testing.T) {
+func TestMiGPTRC4AllowsEmptyOptionalCUserId(t *testing.T) {
  a:=NewAccount("u","p",nil)
  a.token=NewTokens()
- a.token.Sids[MIIO_SID]=SidToken{Ssecurity:"a",ServiceToken:"b"}
- a.client.Transport=otpTransport(func(r *http.Request)(*http.Response,error){t.Fatal("unexpected network call");return nil,nil})
- _,err:=NewIOService(a,nil).MiotActionMiGPT(context.Background(),"did",5,1,nil)
- if err==nil||!strings.Contains(err.Error(),"cUserId") {t.Fatal(err)}
+ a.token.UserId="42"
+ a.token.DeviceId="device1"
+ a.token.Sids[MIIO_SID]=SidToken{
+  Ssecurity:base64.StdEncoding.EncodeToString([]byte("test security phrase 123")),
+  ServiceToken:"service-test",
+ }
+ calls:=0
+ a.client.Transport=otpTransport(func(req *http.Request)(*http.Response,error){
+  calls++
+  cookieFound:=false
+  for _,c:=range req.Cookies(){if c.Name=="cUserId" {cookieFound=true;if c.Value!="" {t.Fatal("expected empty cUserId")}}}
+  if !cookieFound {t.Fatal("missing optional cUserId cookie")}
+  return &http.Response{StatusCode:429,Header:make(http.Header),Body:io.NopCloser(strings.NewReader("limited")),Request:req},nil
+ })
+ _,err:=NewIOService(a,nil).MiotActionMiGPT(context.Background(),"did",5,1,[]interface{}{"test"})
+ if err==nil || !strings.Contains(err.Error(),"429") || calls!=1 {t.Fatalf("unexpected result %v calls=%d",err,calls)}
 }
