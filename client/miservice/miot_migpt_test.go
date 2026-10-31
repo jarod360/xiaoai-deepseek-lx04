@@ -121,3 +121,80 @@ func TestMiGPTRC4DecodeValidation(t *testing.T) {
   if _,err:=miGPTDecodeMIoT(security,nonce,encode(bytes.Repeat([]byte("x"),(1<<20)+1)),false);err==nil {t.Fatal("oversized reply accepted")}
  })
 }
+
+func TestMiGPTRC4HTTPFailuresDoNotRetry(t *testing.T) {
+ for _,tc:=range []struct{status int;message string}{
+  {http.StatusUnauthorized,"HTTP 401"},
+  {http.StatusForbidden,"HTTP 403"},
+  {http.StatusTooManyRequests,"HTTP 429"},
+ } {
+  t.Run(tc.message,func(t *testing.T){
+   a:=NewAccount("u","p",nil)
+   a.token=NewTokens()
+   a.token.Sids[MIIO_SID]=SidToken{Ssecurity:base64.StdEncoding.EncodeToString([]byte("test secret")),ServiceToken:"token"}
+   calls:=0
+   a.client.Transport=otpTransport(func(req *http.Request)(*http.Response,error){
+    calls++
+    return &http.Response{StatusCode:tc.status,Header:http.Header{"Retry-After":[]string{"60"}},Body:io.NopCloser(strings.NewReader("error")),Request:req},nil
+   })
+   _,err:=NewIOService(a,nil).MiotActionMiGPT(context.Background(),"did",5,1,[]interface{}{"hi"})
+   if err==nil||!strings.Contains(err.Error(),tc.message)||calls!=1{t.Fatalf("status=%d calls=%d err=%v",tc.status,calls,err)}
+  })
+ }
+}
+
+func TestMiGPTRC4CancelledBeforeRequest(t *testing.T) {
+ a:=NewAccount("u","p",nil)
+ a.token=NewTokens()
+ a.token.Sids[MIIO_SID]=SidToken{Ssecurity:base64.StdEncoding.EncodeToString([]byte("test secret")),ServiceToken:"token"}
+ a.client.Transport=otpTransport(func(req *http.Request)(*http.Response,error){
+  t.Fatal("cancelled request reached transport")
+  return nil,context.Canceled
+ })
+ ctx,cancel:=context.WithCancel(context.Background());cancel()
+ _,err:=NewIOService(a,nil).MiotActionMiGPT(ctx,"did",5,1,[]interface{}{"hi"})
+ if err!=context.Canceled{t.Fatalf("expected cancellation: %v",err)}
+}
+
+func TestMiGPTRC4MalformedEncryptedReplies(t *testing.T) {
+ for _,tc:=range []struct{name,body string}{
+  {"missing top code",`{"result":{"code":0}}`},
+  {"wrong top code",`{"code":"0","result":{"code":0}}`},
+  {"missing result",`{"code":0}`},
+  {"missing action code",`{"code":0,"result":{}}`},
+ }{
+  t.Run(tc.name,func(t *testing.T){
+   a:=NewAccount("u","p",nil)
+   a.token=NewTokens()
+   a.token.Sids[MIIO_SID]=SidToken{Ssecurity:base64.StdEncoding.EncodeToString([]byte("test secret")),ServiceToken:"token"}
+   a.client.Transport=otpTransport(func(req *http.Request)(*http.Response,error){
+    body,err:=io.ReadAll(req.Body);if err!=nil{return nil,err}
+    vals,err:=url.ParseQuery(string(body));if err!=nil{return nil,err}
+    snonce,err:=signNonce(a.token.Sids[MIIO_SID].Ssecurity,vals.Get("_nonce"));if err!=nil{return nil,err}
+    key,err:=base64.StdEncoding.DecodeString(snonce);if err!=nil{return nil,err}
+    parts,err:=miGPTRC4(key,[]byte(tc.body));if err!=nil{return nil,err}
+    return &http.Response{StatusCode:200,Header:make(http.Header),Body:io.NopCloser(strings.NewReader(base64.StdEncoding.EncodeToString(parts[0]))),Request:req},nil
+   })
+   _,err:=NewIOService(a,nil).MiotActionMiGPT(context.Background(),"did",5,1,[]interface{}{"hi"})
+   if err==nil{t.Fatal("malformed response was accepted")}
+  })
+ }
+}
+
+func TestMiGPTRC4ReusesCachedSIDWithoutLogin(t *testing.T) {
+ tokens:=NewTokens()
+ tokens.UserName="speaker-account"
+ tokens.UserId="42"
+ tokens.DeviceId="device"
+ tokens.Sids[MIIO_SID]=SidToken{Ssecurity:base64.StdEncoding.EncodeToString([]byte("test secret")),ServiceToken:"cached-token"}
+ store:=&cachedSIDStore{tokens:tokens}
+ a:=NewAccount("speaker-account","unused",store)
+ calls:=0
+ a.client.Transport=otpTransport(func(req *http.Request)(*http.Response,error){
+  calls++
+  if req.URL.Host!="api.io.mi.com"{t.Fatalf("unexpected login request: %s",req.URL.Host)}
+  return &http.Response{StatusCode:429,Header:make(http.Header),Body:io.NopCloser(strings.NewReader("")),Request:req},nil
+ })
+ _,err:=NewIOService(a,nil).MiotActionMiGPT(context.Background(),"did",5,1,[]interface{}{"hi"})
+ if err==nil||!strings.Contains(err.Error(),"429")||calls!=1||store.saves!=0{t.Fatalf("cache reuse failed: calls=%d saves=%d err=%v",calls,store.saves,err)}
+}
