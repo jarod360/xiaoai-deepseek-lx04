@@ -17,6 +17,7 @@ type Tokens struct {
 	UserName  string              `json:"user_name"`
 	DeviceId  string              `json:"device_id"`
 	UserId    string              `json:"user_id"`
+	CUserId   string              `json:"c_user_id,omitempty"`
 	PassToken string              `json:"pass_token"`
 	Sids      map[string]SidToken `json:"sids"`
 }
