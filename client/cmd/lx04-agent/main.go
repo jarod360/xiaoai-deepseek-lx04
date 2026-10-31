@@ -82,6 +82,12 @@ func (a *agent) onQuery(query string) {
 		a.cancel()
 	}
 	a.pending = ""
+	// "退出" is a control command, not a question for DeepSeek or a TTS answer.
+	if q == "退出" || q == "退出。" || q == "退出！" || q == "退出!" {
+		a.restore()
+		log.Print("route=exit; DeepSeek cancelled without speech or answer screen")
+		return
+	}
 	if devicevoice.NativeRequest(q) {
 		a.restore()
 		log.Print("route=native")
