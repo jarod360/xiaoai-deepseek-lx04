@@ -15,7 +15,11 @@ func (s *IOService) MiotActionMiGPT(ctx context.Context, did string, siid, aiid 
  if err:=ctx.Err();err!=nil{return -1,err}
  a:=s.account
  if !a.hasSid(MIIO_SID) {
-   if err:=a.Login(MIIO_SID);err!=nil{return -1,err}
+   // Prefer a complete cached SID before attempting another Xiaomi login.
+   if err:=a.LoadCachedSID(MIIO_SID);err!=nil {
+     if err:=ctx.Err();err!=nil{return -1,err}
+     if err:=a.Login(MIIO_SID);err!=nil{return -1,err}
+   }
  }
  t:=a.token
  sid:=t.Sids[MIIO_SID]
@@ -50,7 +54,14 @@ func (s *IOService) MiotActionMiGPT(ctx context.Context, did string, siid, aiid 
    if retryAfter=="" {retryAfter="absent"}
    return -1,fmt.Errorf("MIoT RC4 HTTP 429 (Retry-After %q)",retryAfter)
   }
-  return -1,fmt.Errorf("MIoT RC4 HTTP %d",response.StatusCode)
+  switch response.StatusCode {
+   case http.StatusUnauthorized:
+    return -1,fmt.Errorf("MIoT RC4 authentication rejected (HTTP 401; no automatic login or retry)")
+   case http.StatusForbidden:
+    return -1,fmt.Errorf("MIoT RC4 access forbidden (HTTP 403; no automatic login or retry)")
+   default:
+    return -1,fmt.Errorf("MIoT RC4 HTTP %d",response.StatusCode)
+  }
  }
  b,err:=io.ReadAll(io.LimitReader(response.Body,1<<20))
  if err!=nil{return -1,err}
