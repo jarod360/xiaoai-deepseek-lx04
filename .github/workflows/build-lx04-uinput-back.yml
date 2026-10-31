@@ -1,0 +1,23 @@
+name: Build LX04 uinput BACK test
+on:
+  push:
+    branches: [test/lx04-uinput-back]
+    paths:
+      - 'tests/lx04-uinput-back.c'
+      - '.github/workflows/build-lx04-uinput-back.yml'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ARMv7 Android binary
+        run: |
+          set -eu
+          NDK="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
+          test -n "$NDK"
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang" -O2 -Wall -Wextra -o lx04-uinput-back tests/lx04-uinput-back.c
+          file lx04-uinput-back
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lx04-uinput-back-armeabi-v7a
+          path: lx04-uinput-back
