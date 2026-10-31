@@ -20,6 +20,7 @@ func showNativeAnswer(ctx context.Context, text string) {
 	if strings.TrimSpace(text) == "" || ctx.Err() != nil {
 		return
 	}
+	started := time.Now()
 	cmd := exec.CommandContext(ctx, "am", "start", "-n", baikeActivity,
 		"--es", "KEY_TEXT_CONTENT", text,
 		"--es", "KEY_TEXT_TITLE", "DeepSeek")
@@ -29,6 +30,7 @@ func showNativeAnswer(ctx context.Context, text string) {
 		log.Printf("native answer screen unavailable: %v", err)
 		return
 	}
+	log.Printf("native UI activity launched in %s", time.Since(started).Round(time.Millisecond))
 	dismissCtx, stopDismiss := context.WithCancel(ctx)
 	go func() {
 		if err := cmd.Wait(); err != nil {
@@ -36,12 +38,12 @@ func showNativeAnswer(ctx context.Context, text string) {
 			log.Printf("native answer screen launch failed: %v", err)
 		}
 	}()
-	go dismissNativeBottom(dismissCtx)
+	go dismissNativeBottom(dismissCtx, started)
 }
 
 // BACK is allowed only while the original LX04 wakeup overlay owns focus.
 // If the full-screen answer activity owns focus, never send BACK.
-func dismissNativeBottom(ctx context.Context) {
+func dismissNativeBottom(ctx context.Context, started time.Time) {
 	timer := time.NewTimer(3 * time.Second)
 	defer timer.Stop()
 	ticker := time.NewTicker(150 * time.Millisecond)
@@ -50,8 +52,10 @@ func dismissNativeBottom(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			log.Printf("native bottom check cancelled after %s", time.Since(started).Round(time.Millisecond))
 			return
 		case <-timer.C:
+			log.Printf("native bottom focus not found after %s", time.Since(started).Round(time.Millisecond))
 			return
 		case <-ticker.C:
 			checkCtx, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
@@ -67,8 +71,12 @@ func dismissNativeBottom(ctx context.Context) {
 				if ctx.Err() != nil {
 					return
 				}
+				log.Printf("native bottom focus matched after %s", time.Since(started).Round(time.Millisecond))
+				backStarted := time.Now()
 				if err := exec.CommandContext(ctx, "/system/bin/sh", "/system/bin/input", "keyevent", "4").Run(); err != nil {
-					log.Printf("native bottom dismiss failed: %v", err)
+					log.Printf("native bottom dismiss failed after %s: %v", time.Since(started).Round(time.Millisecond), err)
+				} else {
+					log.Printf("native bottom BACK completed after %s (command %s)", time.Since(started).Round(time.Millisecond), time.Since(backStarted).Round(time.Millisecond))
 				}
 				return
 			}
