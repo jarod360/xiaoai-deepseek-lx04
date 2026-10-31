@@ -135,7 +135,7 @@ func (a *agent) answer(ctx context.Context, generation int, query string) {
 	a.pending = text
 	a.mu.Unlock()
 	log.Printf("DeepSeek answer ready in %s: %s", time.Since(started).Round(time.Millisecond), text)
-	err = a.box.MiTTS(text)
+	err = a.box.MiTTSContext(ctx, text)
 	a.mu.Lock()
 	if a.generation != generation {
 		a.mu.Unlock()
