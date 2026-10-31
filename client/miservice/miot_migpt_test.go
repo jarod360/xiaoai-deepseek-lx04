@@ -2,6 +2,8 @@ package miservice
 
 import (
  "context"
+ "bytes"
+ "compress/gzip"
  "encoding/base64"
  "encoding/json"
  "io"
@@ -65,4 +67,57 @@ func TestMiGPTRC4AllowsEmptyOptionalCUserId(t *testing.T) {
  })
  _,err:=NewIOService(a,nil).MiotActionMiGPT(context.Background(),"did",5,1,[]interface{}{"test"})
  if err==nil || !strings.Contains(err.Error(),"429") || calls!=1 {t.Fatalf("unexpected result %v calls=%d",err,calls)}
+}
+
+func TestMiGPTRC4SuccessfulResponse(t *testing.T) {
+ a:=NewAccount("u","p",nil)
+ a.token=NewTokens()
+ a.token.UserId="42"
+ a.token.Sids[MIIO_SID]=SidToken{
+  Ssecurity:base64.StdEncoding.EncodeToString([]byte("test security phrase 123")),
+  ServiceToken:"service-test",
+ }
+ a.client.Transport=otpTransport(func(req *http.Request)(*http.Response,error){
+  body,err:=io.ReadAll(req.Body);if err!=nil{return nil,err}
+  values,err:=url.ParseQuery(string(body));if err!=nil{return nil,err}
+  snonce,err:=signNonce(a.token.Sids[MIIO_SID].Ssecurity,values.Get("_nonce"));if err!=nil{return nil,err}
+  key,err:=base64.StdEncoding.DecodeString(snonce);if err!=nil{return nil,err}
+  encrypted,err:=miGPTRC4(key,[]byte(`{"code":0,"result":{"code":0}}`));if err!=nil{return nil,err}
+  return &http.Response{StatusCode:200,Header:make(http.Header),Body:io.NopCloser(strings.NewReader(base64.StdEncoding.EncodeToString(encrypted[0]))),Request:req},nil
+ })
+ code,err:=NewIOService(a,nil).MiotActionMiGPT(context.Background(),"did",5,1,[]interface{}{"test"})
+ if err!=nil || code!=0 {t.Fatalf("successful RC4 reply: code=%v err=%v",code,err)}
+}
+
+func TestMiGPTRC4DecodeValidation(t *testing.T) {
+ security:=base64.StdEncoding.EncodeToString([]byte("test security phrase 123"))
+ nonce:=base64.StdEncoding.EncodeToString([]byte("0123456789ab"))
+ snonce,err:=signNonce(security,nonce);if err!=nil{t.Fatal(err)}
+ key,err:=base64.StdEncoding.DecodeString(snonce);if err!=nil{t.Fatal(err)}
+ encode:=func(payload []byte) []byte {
+  t.Helper()
+  out,err:=miGPTRC4(key,payload);if err!=nil{t.Fatal(err)}
+  return []byte(base64.StdEncoding.EncodeToString(out[0]))
+ }
+ t.Run("valid JSON",func(t *testing.T){
+  value,err:=miGPTDecodeMIoT(security,nonce,encode([]byte(`{"code":0,"result":{"code":0}}`)),false)
+  if err!=nil||value["code"]!=float64(0){t.Fatalf("decode failed: %v",err)}
+ })
+ t.Run("valid gzip",func(t *testing.T){
+  var compressed bytes.Buffer
+  gz:=gzip.NewWriter(&compressed)
+  if _,err:=gz.Write([]byte(`{"code":0,"result":{"code":0}}`));err!=nil{t.Fatal(err)}
+  if err:=gz.Close();err!=nil{t.Fatal(err)}
+  if _,err:=miGPTDecodeMIoT(security,nonce,encode(compressed.Bytes()),true);err!=nil{t.Fatal(err)}
+ })
+ t.Run("oversized gzip",func(t *testing.T){
+  var compressed bytes.Buffer
+  gz:=gzip.NewWriter(&compressed)
+  if _,err:=gz.Write(bytes.Repeat([]byte("X"),(1<<20)+1));err!=nil{t.Fatal(err)}
+  if err:=gz.Close();err!=nil{t.Fatal(err)}
+  if _,err:=miGPTDecodeMIoT(security,nonce,encode(compressed.Bytes()),true);err==nil {t.Fatal("oversized gzip accepted")}
+ })
+ t.Run("oversized plaintext",func(t *testing.T){
+  if _,err:=miGPTDecodeMIoT(security,nonce,encode(bytes.Repeat([]byte("x"),(1<<20)+1)),false);err==nil {t.Fatal("oversized reply accepted")}
+ })
 }
