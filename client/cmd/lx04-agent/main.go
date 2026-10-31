@@ -83,7 +83,7 @@ func (a *agent) onQuery(query string) {
 	}
 	a.pending = ""
 	// "退出" is a control command, not a question for DeepSeek or a TTS answer.
-	if q == "退出" || q == "退出。" || q == "退出！" || q == "退出!" {
+	if q == "退出" || q == "退出。" || q == "退出！" || q == "退出!" || q == "退出播放" || q == "退出播放。" || q == "退出播放！" || q == "退出播放!" {
 		a.restore()
 		log.Print("route=exit; DeepSeek cancelled without speech or answer screen")
 		return
