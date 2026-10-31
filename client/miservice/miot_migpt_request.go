@@ -54,9 +54,11 @@ func (s *IOService) MiotActionMiGPT(ctx context.Context, did string, siid, aiid 
  }
  b,err:=io.ReadAll(io.LimitReader(response.Body,1<<20))
  if err!=nil{return -1,err}
- result,err:=miGPTDecodeMIoT(sid.Ssecurity,nonce,b,response.Header.Get("miot-content-encoding")=="GZIP")
+ result,err:=miGPTDecodeMIoT(sid.Ssecurity,nonce,b,strings.EqualFold(strings.TrimSpace(response.Header.Get("miot-content-encoding")),"GZIP"))
  if err!=nil{return -1,err}
- if code,ok:=result["code"].(float64);ok&&code!=0{return -1,fmt.Errorf("MIoT RC4 API code %.0f",code)}
+ apiCode,ok:=result["code"].(float64)
+ if !ok{return -1,errors.New("MIoT RC4 API code missing")}
+ if apiCode!=0{return -1,fmt.Errorf("MIoT RC4 API code %.0f",apiCode)}
  action,ok:=result["result"].(map[string]any)
  if !ok{return -1,errors.New("MIoT RC4 result missing")}
  code,ok:=action["code"].(float64)
