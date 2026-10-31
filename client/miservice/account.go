@@ -15,8 +15,6 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"ninego/log"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
