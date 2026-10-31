@@ -279,21 +279,31 @@ func propId(action string) miservice.Iid {
 
 func actionId(action string) []int {
 	ids := strings.Split(action, "-")
-	if len(ids) < 2 {
-		return []int{0, 0}
+	if len(ids) != 2 {
+		return nil
 	}
-	siid, _ := strconv.Atoi(ids[0])
-	iid, _ := strconv.Atoi(ids[1])
-	return []int{siid, iid}
+	siid, err1 := strconv.Atoi(strings.TrimSpace(ids[0]))
+	aiid, err2 := strconv.Atoi(strings.TrimSpace(ids[1]))
+	if err1 != nil || err2 != nil || siid <= 0 || aiid <= 0 {
+		return nil
+	}
+	return []int{siid, aiid}
 }
 
 func (mt *XiaoMi) WakeUp() {
-	if _, err := mt.miioService.MiotAction(mt.config.MiDID, actionId(mt.hardwareCommand(WakeupIndex)), nil); err == nil {
-		return
+	if ids := actionId(mt.hardwareCommand(WakeupIndex)); ids != nil {
+		if _, err := mt.miioService.MiotAction(mt.config.MiDID, ids, nil); err == nil {
+			return
+		}
 	}
 
 	w := mt.hardwareCommand(ActionIndex)
-	if _, err := mt.miioService.MiotAction(mt.config.MiDID /*.deviceID*/, actionId(w), []interface{}{WakeupKeyword, 0}); err != nil {
+	ids := actionId(w)
+	if ids == nil {
+		log.Error("唤醒设备失败: invalid action id")
+		return
+	}
+	if _, err := mt.miioService.MiotAction(mt.config.MiDID, ids, []interface{}{WakeupKeyword, 0}); err != nil {
 		log.Error("唤醒设备失败: ", err)
 	}
 }
@@ -311,7 +321,7 @@ func (mt *XiaoMi) MiTTSContext(ctx context.Context, message string) error {
 	if mt.config.UseCommand {
 		t := mt.hardwareCommand(TTSIndex)
 		ids := actionId(t)
-		if len(ids) != 2 { return fmt.Errorf("invalid TTS action id") }
+		if ids == nil { return fmt.Errorf("invalid TTS action id") }
 		c, err := mt.miioService.MiotActionMiGPT(ctx, mt.config.MiDID, ids[0], ids[1], []interface{}{message})
 		log.Debug("TTS command result", c, err)
 		if err != nil {
@@ -367,7 +377,11 @@ func (mt *XiaoMi) MiPlay(url string) error {
 }
 
 func (mt *XiaoMi) MiAction(message string) error {
-	_, err := mt.miioService.MiotAction(mt.config.MiDID, actionId(mt.hardwareCommand(ActionIndex)), []interface{}{message, 0})
+	ids := actionId(mt.hardwareCommand(ActionIndex))
+	if ids == nil {
+		return fmt.Errorf("invalid action id")
+	}
+	_, err := mt.miioService.MiotAction(mt.config.MiDID, ids, []interface{}{message, 0})
 	return err
 }
 
