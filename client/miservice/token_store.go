@@ -5,6 +5,7 @@ package miservice
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 )
 
 type SidToken struct {
@@ -59,11 +60,28 @@ func (mts *FileTokenStore) SaveToken(tokens *Tokens) error {
 		if err != nil {
 			return err
 		}
-		err = os.WriteFile(mts.tokenPath, data, 0600)
+		// Preserve the previous token on power loss or interrupted writes.
+		tmp, err := os.CreateTemp(filepath.Dir(mts.tokenPath), ".mi-token-*")
 		if err != nil {
 			return err
 		}
-		return os.Chmod(mts.tokenPath, 0600)
+		defer os.Remove(tmp.Name())
+		if err := tmp.Chmod(0600); err != nil {
+			tmp.Close()
+			return err
+		}
+		if _, err := tmp.Write(data); err != nil {
+			tmp.Close()
+			return err
+		}
+		if err := tmp.Sync(); err != nil {
+			tmp.Close()
+			return err
+		}
+		if err := tmp.Close(); err != nil {
+			return err
+		}
+		return os.Rename(tmp.Name(), mts.tokenPath)
 	} else {
 		err = os.Remove(mts.tokenPath)
 		if os.IsNotExist(err) {
