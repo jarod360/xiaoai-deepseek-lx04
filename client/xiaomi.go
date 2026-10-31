@@ -3,6 +3,7 @@
 package xiaobot
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -299,13 +300,17 @@ func (mt *XiaoMi) WakeUp() {
 
 // miTTS 文本转语音，优化分片处理
 func (mt *XiaoMi) MiTTS(message string) error {
+	return mt.MiTTSContext(context.Background(), message)
+}
+
+func (mt *XiaoMi) MiTTSContext(ctx context.Context, message string) error {
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return nil
 	}
 	if mt.config.UseCommand {
 		t := mt.hardwareCommand(TTSIndex)
-		c, err := mt.miioService.MiotAction(mt.config.MiDID /*.deviceID*/, actionId(t), []interface{}{message})
+		c, err := mt.miioService.MiotActionContext(ctx, mt.config.MiDID /*.deviceID*/, actionId(t), []interface{}{message})
 		log.Debug("TTS command result", c, err)
 		if err != nil {
 			return fmt.Errorf("TTS命令执行失败: %w", err)
