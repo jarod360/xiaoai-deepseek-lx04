@@ -31,8 +31,8 @@ func showNativeAnswer(ctx context.Context, text string) {
 	}
 	dismissCtx, stopDismiss := context.WithCancel(ctx)
 	go func() {
-		defer stopDismiss()
 		if err := cmd.Wait(); err != nil {
+			stopDismiss()
 			log.Printf("native answer screen launch failed: %v", err)
 		}
 	}()
