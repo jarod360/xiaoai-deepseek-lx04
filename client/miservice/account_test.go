@@ -65,7 +65,7 @@ func TestXiaomiRateLimitIncludesRetryAfterWithoutRetry(t *testing.T) {
 				}, nil
 			})
 			var out map[string]any
-			err := a.Request("xiaomiio", "https://api.io.mi.com/app/miotspec/action", nil, nil, nil, false, &out)
+			err := a.Request("xiaomiio", "https://api.io.mi.com/app/miotspec/action", nil, nil, nil, true, &out)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("unexpected error: %v", err)
 			}
