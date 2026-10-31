@@ -8,7 +8,7 @@ import (
  "encoding/json"
  "errors"
  "io"
-)
+ )
 func miGPTDecodeMIoT(ssecurity, nonce string, encoded []byte, zipped bool) (map[string]any,error) {
  snonce, err := signNonce(ssecurity, nonce)
  if err!=nil {return nil,err}
@@ -25,9 +25,11 @@ func miGPTDecodeMIoT(ssecurity, nonce string, encoded []byte, zipped bool) (map[
    zr,e:=gzip.NewReader(bytes.NewReader(ciphertext))
    if e!=nil {return nil,errors.New("RC4 reply invalid gzip")}
    defer zr.Close()
-   ciphertext,err=io.ReadAll(io.LimitReader(zr,1<<20))
+   ciphertext,err=io.ReadAll(io.LimitReader(zr,(1<<20)+1))
    if err!=nil {return nil,err}
+   if len(ciphertext)>1<<20 {return nil,errors.New("RC4 reply exceeds size limit")}
  }
+ if len(ciphertext)>1<<20 {return nil,errors.New("RC4 reply exceeds size limit")}
  var res map[string]any
  if json.Unmarshal(ciphertext,&res)!=nil {return nil,errors.New("RC4 reply invalid JSON")}
  return res,nil
