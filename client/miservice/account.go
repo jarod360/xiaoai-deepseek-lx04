@@ -115,6 +115,7 @@ func (ma *Account) Login(sid string) error {
 		return errors.New("Xiaomi login response lacks required credentials")
 	}
 	ma.token.UserId = fmt.Sprint(resp.UserID)
+	ma.token.CUserId = resp.CUserID
 	ma.token.PassToken = resp.PassToken
 
 	var serviceToken string
