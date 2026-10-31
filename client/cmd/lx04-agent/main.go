@@ -4,15 +4,12 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -35,6 +32,7 @@ type agent struct {
 	client     *openai.Client
 	answerer   *voiceanswer.Engine
 	config     *xiaobot.Config
+	doorbell   *doorbellGuard
 	generation int
 	cancel     context.CancelFunc
 	pending    string
@@ -56,7 +54,17 @@ func (a *agent) onSpeak(text string) {
 		log.Print("DeepSeek speech received locally; audio restored")
 	}
 }
+func (a *agent) preemptForDoorbell() {
+ a.mu.Lock()
+ defer a.mu.Unlock()
+ a.generation++
+ if a.cancel!=nil {a.cancel()}
+ a.pending=""
+ a.restore()
+ log.Print("AI cancelled for doorbell or unavailable receiver")
+}
 func (a *agent) onQuery(query string) {
+ if a.doorbell!=nil && a.doorbell.check(context.Background()){a.preemptForDoorbell();return}
 	q := strings.TrimSpace(query)
 	if q == "" {
 		return
@@ -86,7 +94,7 @@ func (a *agent) onQuery(query string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	a.cancel = cancel
-	log.Printf("route=deepseek query=%s", q)
+	log.Print("route=deepseek")
 	go a.answer(ctx, generation, q)
 	// Bounded watchdog restores audio even if the network or native TTS stalls.
 	go func() {
@@ -127,6 +135,7 @@ func (a *agent) answer(ctx context.Context, generation int, query string) {
 		}
 		return
 	}
+	if a.doorbell != nil && a.doorbell.check(ctx) {a.preemptForDoorbell();return}
 	a.mu.Lock()
 	if a.generation != generation || ctx.Err() != nil {
 		a.mu.Unlock()
@@ -134,7 +143,7 @@ func (a *agent) answer(ctx context.Context, generation int, query string) {
 	}
 	a.pending = text
 	a.mu.Unlock()
-	log.Printf("DeepSeek answer ready in %s: %s", time.Since(started).Round(time.Millisecond), text)
+	log.Printf("DeepSeek answer ready in %s", time.Since(started).Round(time.Millisecond)
 	err = a.box.MiTTSContext(ctx, text)
 	a.mu.Lock()
 	if a.generation != generation {
@@ -144,7 +153,7 @@ func (a *agent) answer(ctx context.Context, generation int, query string) {
 	if err != nil {
 		a.pending = ""
 		a.restore()
-		log.Printf("native TTS request failed: %v; audio restored", err)
+		log.Print("native TTS request failed; audio restored")
 		a.mu.Unlock()
 		return
 	}
@@ -188,6 +197,7 @@ func main() {
 	if err != nil || cfg == nil || cfg.NeedSetup() || cfg.Hardware != "LX04" {
 		log.Fatal("speaker configuration incomplete")
 	}
+	cfg.TokenPath = filepath.Join(filepath.Dir(*configPath), ".mi.token")
 	box := xiaobot.NewXiaoMi(cfg)
 	if box.InitMiBox() != nil {
 		log.Fatal("Xiaomi session initialization failed")
@@ -195,9 +205,10 @@ func main() {
 	client := openai.NewClient(cfg.OpenAIKey, cfg.OpenAIBackend, "")
 	client.GPTOptions = cfg.GPTOptions
 	answerer := &voiceanswer.Engine{Chat: client, Search: deepseekweb.NewClient(cfg.OpenAIKey), Model: cfg.Bot, Prompt: cfg.Prompt}
-	a := &agent{gate: gate, box: box, client: client, config: cfg, answerer: answerer}
+	a := &agent{gate: gate, box: box, client: client, config: cfg, answerer: answerer, doorbell: newDoorbellGuard("http://127.0.0.1:7979/state")}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
+	go a.doorbell.watch(ctx, a.preemptForDoorbell)
 	go func() {
 		<-ctx.Done()
 		a.mu.Lock()
@@ -208,30 +219,12 @@ func main() {
 		a.mu.Unlock()
 	}()
 	defer a.restore()
-	cmd := exec.CommandContext(ctx, "/system/bin/logcat", "-v", "raw", "-T", time.Now().Format("01-02 15:04:05.000"), "MICO.cap:I", "MICO.speech:I", "*:S")
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		log.Fatal("local speech pipe failed")
-	}
-	cmd.Stderr = os.Stderr
-	if cmd.Start() != nil {
-		log.Fatal("could not start local speech listener")
-	}
-	log.Print("ready: native ASR, automatic routing, on-device DeepSeek client")
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		e := devicevoice.ParseEvent(scanner.Text())
-		switch e.Kind {
-		case "query":
-			a.onQuery(e.Text)
-		case "speak":
-			a.onSpeak(e.Text)
-		}
-	}
-	if scanner.Err() != nil {
-		fmt.Fprintln(os.Stderr, "local speech listener read failed")
-	}
-	cancel()
-	cmd.Wait()
+	retrySpeech(ctx, a.listenSpeech, func() {
+  a.mu.Lock()
+  a.generation++
+  if a.cancel!=nil {a.cancel()}
+  a.pending=""
+  a.restore()
+  a.mu.Unlock()
+ },3*time.Second)
 }
