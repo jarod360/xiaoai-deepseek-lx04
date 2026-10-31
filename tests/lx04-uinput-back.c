@@ -58,8 +58,8 @@ int main(void) {
         ioctl(fd, UI_DEV_CREATE) < 0) {
         perror("uinput create"); close(fd); return 1;
     }
-    // Give Android InputReader time to register the virtual keyboard.
-    sleep(1);
+    // Short registration window for latency test; fail safely if InputReader is not ready.
+    usleep(200000);
     if (!original_overlay_focused()) {
         fprintf(stderr, "SKIP: focus changed; no BACK sent\n");
         ioctl(fd, UI_DEV_DESTROY); close(fd); return 2;
