@@ -8,10 +8,27 @@ func (a *agent) listenSpeech(ctx context.Context) {
  cmd:=exec.CommandContext(ctx,"/system/bin/logcat","-v","raw","-T",time.Now().Format("01-02 15:04:05.000"),"MICO.cap:I","MICO.speech:I","*:S")
  stdout,err:=cmd.StdoutPipe();if err!=nil{log.Print("local speech pipe failed");return}
  cmd.Stderr=os.Stderr
- if cmd.Start()!=nil{stdout.Close();log.Print("could not start local speech listener");return}
- defer func(){stdout.Close();cmd.Process.Kill();cmd.Wait()}()
+ if err=cmd.Start();err!=nil{stdout.Close();log.Printf("could not start local speech listener: %v",err);return}
+ started:=time.Now()
+ pid:=cmd.Process.Pid
+ log.Printf("local speech listener started pid=%d",pid)
  log.Print("ready: native ASR, automatic routing, on-device DeepSeek client")
  scanner:=bufio.NewScanner(stdout);scanner.Buffer(make([]byte,64*1024),1024*1024)
  for scanner.Scan(){e:=devicevoice.ParseEvent(scanner.Text());switch e.Kind{case "query":a.onQuery(e.Text);case "speak":a.onSpeak(e.Text)}}
- if scanner.Err()!=nil{log.Print("local speech listener read failed")}
+ readErr:=scanner.Err()
+ // Capture the child's real exit status if it exits promptly after EOF.
+ // Otherwise perform the same child cleanup as before, without blocking reconnection.
+ waited:=make(chan error,1)
+ go func(){waited<-cmd.Wait()}()
+ var exitErr error
+ forced:=false
+ select{
+ case exitErr=<-waited:
+ case <-time.After(200*time.Millisecond):
+  forced=true
+  _=cmd.Process.Kill()
+  exitErr=<-waited
+ }
+ _=stdout.Close()
+ log.Printf("local speech listener ended pid=%d duration=%s read_error=%v exit=%v forced_cleanup=%t",pid,time.Since(started).Round(time.Millisecond),readErr,exitErr,forced)
 }
