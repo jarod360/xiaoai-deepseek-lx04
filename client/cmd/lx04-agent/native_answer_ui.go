@@ -41,6 +41,8 @@ func showNativeAnswer(ctx context.Context, text string) {
 	go dismissNativeBottom(dismissCtx, started)
 }
 
+// BACK uses the independently verified uinput probe on LX04.
+// The helper rechecks focus immediately before injecting the key.
 // BACK is allowed only while the original LX04 wakeup overlay owns focus.
 // If the full-screen answer activity owns focus, never send BACK.
 func dismissNativeBottom(ctx context.Context, started time.Time) {
@@ -73,7 +75,7 @@ func dismissNativeBottom(ctx context.Context, started time.Time) {
 				}
 				log.Printf("native bottom focus matched after %s", time.Since(started).Round(time.Millisecond))
 				backStarted := time.Now()
-				if err := exec.CommandContext(ctx, "/system/bin/sh", "/system/bin/input", "keyevent", "4").Run(); err != nil {
+				if err := exec.CommandContext(ctx, "/data/local/tmp/xiaoseek-test/back-test-bin").Run(); err != nil {
 					log.Printf("native bottom dismiss failed after %s: %v", time.Since(started).Round(time.Millisecond), err)
 				} else {
 					log.Printf("native bottom BACK completed after %s (command %s)", time.Since(started).Round(time.Millisecond), time.Since(backStarted).Round(time.Millisecond))
