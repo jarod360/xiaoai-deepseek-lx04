@@ -62,6 +62,9 @@ func main() {
 		fail(fmt.Errorf("saved Xiaomi token missing or does not match configured account"))
 	}
 	account := miservice.NewAccount(cfg.Account, cfg.Password, readOnlyTokens{tokens: tokens})
+	if err := account.LoadCachedSID(miservice.MIIO_SID); err != nil {
+		fail(err)
+	}
 	service := miservice.NewIOService(account, nil)
 	var code float64
 	if *protocol == "migpt-rc4" {
