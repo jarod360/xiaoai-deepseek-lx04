@@ -25,6 +25,7 @@ jobs:
           name: lx04-agent-armv7-tts-diagnostics
           path: |
             dist/lx04-agent
+            dist/lx04-ttscheck
             dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 7
