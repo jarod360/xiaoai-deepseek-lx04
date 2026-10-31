@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -26,7 +27,11 @@ func fail(err error) {
 func main() {
 	configPath := flag.String("config", "/data/adb/lx04-deepseek/config.json", "speaker config path")
 	speak := flag.Bool("speak", false, "send one short MIoT TTS test to the LX04")
+	protocol := flag.String("protocol", "legacy", "legacy or migpt-rc4 diagnostic protocol")
 	flag.Parse()
+	if *protocol != "legacy" && *protocol != "migpt-rc4" {
+		fail(fmt.Errorf("unknown diagnostic protocol"))
+	}
 	if !*speak {
 		fmt.Println("No request sent; pass -speak to send one short diagnostic announcement.")
 		return
@@ -58,7 +63,12 @@ func main() {
 	}
 	account := miservice.NewAccount(cfg.Account, cfg.Password, readOnlyTokens{tokens: tokens})
 	service := miservice.NewIOService(account, nil)
-	code, err := service.MiotAction(cfg.DID, []int{5, 1}, []interface{}{"DeepSeek 播报诊断测试。"})
+	var code float64
+	if *protocol == "migpt-rc4" {
+		code, err = service.MiotActionMiGPT(context.Background(), cfg.DID, 5, 1, []interface{}{"DeepSeek 播报诊断测试。"})
+	} else {
+		code, err = service.MiotAction(cfg.DID, []int{5, 1}, []interface{}{"DeepSeek 播报诊断测试。"})
+	}
 	if err != nil {
 		fail(fmt.Errorf("LX04 MIoT 5-1 TTS request failed: %w", err))
 	}
