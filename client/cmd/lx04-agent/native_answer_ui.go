@@ -23,11 +23,20 @@ func showNativeAnswer(ctx context.Context, text string) {
 	cmd := exec.CommandContext(ctx, "am", "start", "-n", baikeActivity,
 		"--es", "KEY_TEXT_CONTENT", text,
 		"--es", "KEY_TEXT_TITLE", "DeepSeek")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("native answer screen unavailable: %v (%s)", err, strings.TrimSpace(string(out)))
+	// Start bottom-dismiss checks as soon as the Activity launch begins,
+	// rather than waiting for "am start" to return.
+	if err := cmd.Start(); err != nil {
+		log.Printf("native answer screen unavailable: %v", err)
 		return
 	}
-	go dismissNativeBottom(ctx)
+	dismissCtx, stopDismiss := context.WithCancel(ctx)
+	go func() {
+		defer stopDismiss()
+		if err := cmd.Wait(); err != nil {
+			log.Printf("native answer screen launch failed: %v", err)
+		}
+	}()
+	go dismissNativeBottom(dismissCtx)
 }
 
 // BACK is allowed only while the original LX04 wakeup overlay owns focus.
