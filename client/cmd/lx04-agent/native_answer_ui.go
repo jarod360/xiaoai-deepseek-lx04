@@ -58,7 +58,7 @@ func dismissNativeBottom(ctx context.Context) {
 				if ctx.Err() != nil {
 					return
 				}
-				if err := exec.CommandContext(ctx, "input", "keyevent", "4").Run(); err != nil {
+				if err := exec.CommandContext(ctx, "/system/bin/sh", "/system/bin/input", "keyevent", "4").Run(); err != nil {
 					log.Printf("native bottom dismiss failed: %v", err)
 				}
 				return
