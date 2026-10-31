@@ -144,7 +144,7 @@ func (a *agent) answer(ctx context.Context, generation int, query string) {
 	if err != nil {
 		a.pending = ""
 		a.restore()
-		log.Print("native TTS request failed; audio restored")
+		log.Printf("native TTS request failed: %v; audio restored", err)
 		a.mu.Unlock()
 		return
 	}
