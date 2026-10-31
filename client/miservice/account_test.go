@@ -3,6 +3,8 @@
 package miservice
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -73,5 +75,43 @@ func TestXiaomiRateLimitIncludesRetryAfterWithoutRetry(t *testing.T) {
 				t.Fatalf("HTTP 429 must not retry: got %d requests", calls)
 			}
 		})
+	}
+}
+
+func TestXiaomiLoginRateLimitSkipsPasswordAuthentication(t *testing.T) {
+	a := NewAccount("unused", "unused", nil)
+	calls := 0
+	a.client.Transport = otpTransport(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.URL.Path != "/pass/serviceLogin" {
+			t.Fatalf("unexpected extra login request: %s", r.URL.Path)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("&&&START&&&{\"code\":70022}")), Request: r}, nil
+	})
+	err := a.Login("xiaomiio")
+	if err == nil || !strings.Contains(err.Error(), "70022") {
+		t.Fatalf("expected rate-limit error, got %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected one login request, got %d", calls)
+	}
+}
+
+func TestXiaomiRequestContextCancellation(t *testing.T) {
+	a := NewAccount("unused", "unused", nil)
+	a.token = NewTokens()
+	a.token.UserId = "test"
+	a.token.Sids["xiaomiio"] = SidToken{ServiceToken: "test"}
+	called := false
+	a.client.Transport = otpTransport(func(r *http.Request) (*http.Response, error) {
+		called = true
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("{\"code\":0}")), Request: r}, nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var out map[string]any
+	err := a.RequestContext(ctx, "xiaomiio", "https://api.io.mi.com/app/miotspec/action", nil, nil, nil, true, &out)
+	if !errors.Is(err, context.Canceled) || called {
+		t.Fatalf("cancelled request was sent: %v (called=%v)", err, called)
 	}
 }
