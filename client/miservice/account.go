@@ -297,6 +297,19 @@ func (ma *Account) NewRequest(sid, u string, data url.Values, cb DataCb, headers
 	return req
 }
 
+// LoadCachedSID loads an existing credential without performing network login.
+// Diagnostic requests must not silently change the authentication flow.
+func (ma *Account) LoadCachedSID(sid string) error {
+ if ma.tokenStore == nil { return errors.New("cached Xiaomi credentials unavailable") }
+ tokens, err := ma.tokenStore.LoadToken()
+ if err != nil { return fmt.Errorf("load cached Xiaomi credentials: %w", err) }
+ if tokens == nil || tokens.UserName != ma.username { return errors.New("cached Xiaomi account mismatch") }
+ token, ok := tokens.Sids[sid]
+ if !ok || token.ServiceToken == "" || token.Ssecurity == "" { return errors.New("cached Xiaomi SID credentials incomplete; no login attempted") }
+ ma.token = tokens
+ return nil
+}
+
 func (ma *Account) hasSid(sid string) bool {
 	if ma.token == nil {
 		return false
