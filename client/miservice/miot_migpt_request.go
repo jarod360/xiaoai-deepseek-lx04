@@ -2,6 +2,8 @@ package miservice
 
 import (
  "context"
+ "crypto/rand"
+ "encoding/base64"
  "errors"
  "fmt"
  "io"
@@ -19,8 +21,9 @@ func (s *IOService) MiotActionMiGPT(ctx context.Context, did string, siid, aiid 
  sid:=t.Sids[MIIO_SID]
  if sid.Ssecurity==""||sid.ServiceToken=="" {return -1,errors.New("xiaomiio credential incomplete")}
  const path="/miotspec/action"
- nonce:=genNonce()
- if nonce=="" {return -1,errors.New("nonce unavailable")}
+ nonceBytes:=make([]byte,12)
+ if _,err:=rand.Read(nonceBytes);err!=nil {return -1,errors.New("nonce unavailable")}
+ nonce:=base64.StdEncoding.EncodeToString(nonceBytes)
  data,err:=miGPTEncodeMIoT(path,map[string]any{"did":did,"siid":siid,"aiid":aiid,"in":args},sid.Ssecurity,nonce)
  if err!=nil{return -1,err}
  req,err:=http.NewRequestWithContext(ctx,"POST",s.server+path,strings.NewReader(data.Encode()))
