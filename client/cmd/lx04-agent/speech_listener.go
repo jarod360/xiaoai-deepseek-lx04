@@ -5,7 +5,7 @@ func retrySpeech(ctx context.Context, read func(context.Context), interrupted fu
  for ctx.Err()==nil { read(ctx);if ctx.Err()!=nil{return};interrupted();log.Print("local speech listener interrupted; reconnecting");timer:=time.NewTimer(delay);select{case <-ctx.Done():timer.Stop();return;case <-timer.C:} }
 }
 func (a *agent) listenSpeech(ctx context.Context) {
- cmd:=exec.CommandContext(ctx,"/system/bin/logcat","-v","raw","-T",time.Now().Format("01-02 15:04:05.000"),"MICO.cap:I","MICO.speech:I","*:S")
+ cmd:=exec.CommandContext(ctx,"/system/bin/logcat","-v","time","-T",time.Now().Format("01-02 15:04:05.000"),"MICO.cap:I","MICO.speech:D","*:S")
  stdout,err:=cmd.StdoutPipe();if err!=nil{log.Print("local speech pipe failed");return}
  cmd.Stderr=os.Stderr
  if err=cmd.Start();err!=nil{stdout.Close();log.Printf("could not start local speech listener: %v",err);return}
@@ -14,7 +14,14 @@ func (a *agent) listenSpeech(ctx context.Context) {
  log.Printf("local speech listener started pid=%d",pid)
  log.Print("ready: native ASR, automatic routing, on-device DeepSeek client")
  scanner:=bufio.NewScanner(stdout);scanner.Buffer(make([]byte,64*1024),1024*1024)
- for scanner.Scan(){e:=devicevoice.ParseEvent(scanner.Text());switch e.Kind{case "query":a.onQuery(e.Text);case "speak":a.onSpeak(e.Text)}}
+ for scanner.Scan(){
+  e:=devicevoice.ParseRoutingEvent(scanner.Text())
+  switch e.Kind {
+  case "query": a.onRoutingQuery(e)
+  case "speak": a.onSpeak(e.Text); a.onRoutingEvent(e)
+  case "semantic","play-start","play-finish": a.onRoutingEvent(e)
+  }
+ }
  readErr:=scanner.Err()
  // Capture the child's real exit status if it exits promptly after EOF.
  // Otherwise perform the same child cleanup as before, without blocking reconnection.

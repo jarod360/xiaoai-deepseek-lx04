@@ -33,6 +33,7 @@ type agent struct {
 	answerer   *voiceanswer.Engine
 	config     *xiaobot.Config
 	doorbell   *doorbellGuard
+	routing    *routeState
 	generation int
 	cancel     context.CancelFunc
 	pending    string
@@ -71,9 +72,6 @@ func (a *agent) onQuery(query string) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if q == a.lastQuery && time.Since(a.lastAt) < 2*time.Second {
-		return
-	}
 	a.lastQuery = q
 	a.lastAt = time.Now()
 	a.generation++
@@ -83,7 +81,7 @@ func (a *agent) onQuery(query string) {
 	}
 	a.pending = ""
 	// "退出" is a control command, not a question for DeepSeek or a TTS answer.
-	if q == "退出" || q == "退出。" || q == "退出！" || q == "退出!" {
+	if isExitRequest(q) {
 		a.restore()
 		log.Print("route=exit; DeepSeek cancelled without speech or answer screen")
 		return
@@ -212,7 +210,7 @@ func main() {
 	client := openai.NewClient(cfg.OpenAIKey, cfg.OpenAIBackend, "")
 	client.GPTOptions = cfg.GPTOptions
 	answerer := &voiceanswer.Engine{Chat: client, Search: deepseekweb.NewClient(cfg.OpenAIKey), Model: cfg.Bot, Prompt: cfg.Prompt}
-	a := &agent{gate: gate, box: box, client: client, config: cfg, answerer: answerer, doorbell: newDoorbellGuard("http://127.0.0.1:7979/state")}
+	a := &agent{gate: gate, box: box, client: client, config: cfg, answerer: answerer, doorbell: newDoorbellGuard("http://127.0.0.1:7979/state"), routing: &routeState{}}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 	go a.doorbell.watch(ctx, a.preemptForDoorbell)
@@ -227,6 +225,7 @@ func main() {
 	}()
 	defer a.restore()
 	retrySpeech(ctx, a.listenSpeech, func() {
+  a.routing.abortPending()
   a.mu.Lock()
   a.generation++
   if a.cancel!=nil {a.cancel()}
