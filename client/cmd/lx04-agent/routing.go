@@ -96,8 +96,11 @@ func (r *routeState) acceptNative(s *routeSession,why string) {
  if s.timer!=nil {s.timer.Stop()}
  log.Printf("route=native; reason=%s; dialog=%s",why,s.id)
 }
+func (r *routeState) fallbackReady(s *routeSession) bool {
+ return s!=nil && !s.decided && s.fallback && s.played && r.playID=="" && !r.ambiguous
+}
 func (r *routeState) acceptFallback(a *agent,s *routeSession) {
- if s.decided || !s.fallback || !s.played || r.playID!="" || r.ambiguous {return}
+ if !r.fallbackReady(s) {return}
  s.decided=true
  if s.timer!=nil {s.timer.Stop()}
  log.Printf("routing_decision=deepseek; reason=confirmed-fallback-after-tts; dialog=%s",s.id)
@@ -114,14 +117,14 @@ func (a *agent) onRoutingEvent(e devicevoice.RoutingEvent) {
   r.playID=e.DialogID
   return
  case "play-finish":
+  // Stream completion does not prove the OEM speaker has stopped playing.
+  // Keep the active dialog until the TtsCard playback-end callback arrives.
+  return
+ case "tts-end":
   id:=r.playID
   if id=="" {return}
-  if r.ambiguous {
-   r.playID=""
-   r.ambiguous=false
-   return
-  }
   r.playID=""
+  if r.ambiguous {r.ambiguous=false;return}
   if s!=nil && id==s.id {
    s.played=true
    r.acceptFallback(a,s)

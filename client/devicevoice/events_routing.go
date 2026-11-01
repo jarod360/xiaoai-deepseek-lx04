@@ -16,6 +16,11 @@ func ParseRoutingEvent(line string) RoutingEvent {
   if len(words)==0 || words[0]=="" {return RoutingEvent{}}
   return RoutingEvent{Kind:"play-start",DialogID:words[0]}
  }
+ // onPlayFinish closes the AIVS speech stream, not the speaker's PCM playback.
+ // The OEM TtsCard callback arrives only after its TTS player has finished.
+ if strings.Contains(line,"MICO.speech") && strings.Contains(line,"[TtsCard]: onTtsPlayEnd") {
+  return RoutingEvent{Kind:"tts-end"}
+ }
  if strings.Contains(line,"MICO.speech") && strings.Contains(line,"onPlayFinish") {
   return RoutingEvent{Kind:"play-finish"}
  }

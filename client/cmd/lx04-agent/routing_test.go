@@ -32,3 +32,24 @@ func TestRoutingFallbackEvidence(t *testing.T) {
   if got:=devicevoice.IsConfirmedFallback(e);got!=tc.want {t.Errorf("task=%s text=%q got=%t",tc.task,tc.text,got)}
  }
 }
+
+func TestFallbackWaitsForOEMPlaybackEnd(t *testing.T) {
+ r:=&routeState{}
+ s:=&routeSession{id:"native-dialog",query:"我还不会",fallback:false}
+ r.current=s
+ a:=&agent{routing:r}
+ a.onRoutingEvent(devicevoice.RoutingEvent{Kind:"play-start",DialogID:s.id})
+ s.fallback=true
+ a.onRoutingEvent(devicevoice.RoutingEvent{Kind:"play-finish"})
+ if s.played || r.playID!=s.id || r.fallbackReady(s) {
+  t.Fatal("stream finish incorrectly treated as TTS completion")
+ }
+ // Disable the simulated fallback during event dispatch, to avoid
+ // starting a real DeepSeek request in this state-only test.
+ s.fallback=false
+ a.onRoutingEvent(devicevoice.RoutingEvent{Kind:"tts-end"})
+ s.fallback=true
+ if !s.played || r.playID!="" || !r.fallbackReady(s) {
+  t.Fatal("final TtsCard event failed to unlock safe fallback")
+ }
+}

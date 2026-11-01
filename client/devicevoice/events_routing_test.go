@@ -58,3 +58,13 @@ func TestRoutingPlaybackCallbacks(t *testing.T) {
  if e.Kind!="play-start" || e.DialogID!="abc31" {t.Fatal(e)}
  if x:=ParseRoutingEvent("D/MICO.speech(27572): onPlayFinish");x.Kind!="play-finish" {t.Fatal(x)}
 }
+
+func TestRoutingTtsEndNotStreamEnd(t *testing.T) {
+ for _,tc:=range []struct{line,kind string}{
+  {"11-01 14:54:44 021|DEBUG|MICO.speech|[AIVS] onPlayFinish","play-finish"},
+  {"11-01 14:54:45 765|DEBUG|MICO.speech|[SpeechEventHandler] [TtsCard]: onTtsPlayEnd","tts-end"},
+  {"11-01 14:54:45 769|INFO|MICO.ope|[SpeechEventHandler] OperationManager onTtsPlayEnd",""},
+ } {
+  if got:=ParseRoutingEvent(tc.line).Kind;got!=tc.kind {t.Errorf("line %q: got %q want %q",tc.line,got,tc.kind)}
+ }
+}

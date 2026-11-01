@@ -19,7 +19,7 @@ func (a *agent) listenSpeech(ctx context.Context) {
   switch e.Kind {
   case "query": a.onRoutingQuery(e)
   case "speak": a.onSpeak(e.Text); a.onRoutingEvent(e)
-  case "semantic","play-start","play-finish": a.onRoutingEvent(e)
+  case "semantic","play-start","play-finish","tts-end": a.onRoutingEvent(e)
   }
  }
  readErr:=scanner.Err()
