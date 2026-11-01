@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="com.xiaomi.micolauncher.deviceservice.permission.USE_MICO_DEVICE_SERVICE" />
+    <application android:allowBackup="false" android:label="XiaoSeek Binder Probe">
+        <receiver android:name=".ProbeReceiver" android:exported="true">
+            <intent-filter><action android:name="top.xiaoseek.probe.READ_VENDOR" /></intent-filter>
+        </receiver>
+    </application>
+</manifest>

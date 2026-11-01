@@ -1,0 +1,43 @@
+name: LX04 v38 read-only diagnostics
+on:
+  push:
+    branches: [test/lx04-readonly-diagnostics-v38]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  shadow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: .go-version
+          cache-dependency-path: client/go.sum
+      - run: cd client && go test ./cmd/lx04-shadow
+      - run: cd client && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o ../lx04-shadow-v38.exe ./cmd/lx04-shadow
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lx04-shadow-v38-windows
+          path: lx04-shadow-v38.exe
+          retention-days: 7
+  binder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3f2
+        with:
+          gradle-version: '8.10.2'
+      - uses: android-actions/setup-android@07976c6290703d34c16d382cb36445f98bb43c66
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - run: cd tools/binder-probe && gradle --no-daemon :app:assembleDebug
+      - run: sha256sum tools/binder-probe/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lx04-binder-readonly-v38-apk
+          path: tools/binder-probe/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
