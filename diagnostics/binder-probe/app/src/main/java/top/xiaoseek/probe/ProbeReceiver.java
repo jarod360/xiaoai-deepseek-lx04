@@ -22,8 +22,8 @@ import java.util.regex.Pattern;
 
 /** Read-only OEM Binder reachability test. Never sends ai_service/stopTts. */
 public final class ProbeReceiver extends BroadcastReceiver {
-    private static final String TAG = "XiaoSeekBinderV40";
-    private static final String LOG_FILE = "binder-v40.log";
+    private static final String TAG = "XiaoSeekBinderV41";
+    private static final String LOG_FILE = "binder-v41.log";
     private static final Object FILE_LOCK = new Object();
 
     // APK-private file: independent of logd/logcat. Records no identifiers or callback payload.
@@ -51,6 +51,8 @@ public final class ProbeReceiver extends BroadcastReceiver {
         final Handler handler = new Handler(Looper.getMainLooper());
         final boolean[] bound = {false};
         final ServiceConnection[] connection = new ServiceConnection[1];
+        // Keep the callback Binder strongly reachable until completion/timeout.
+        final Binder[] callbackHolder = new Binder[1];
 
         final Runnable cleanup = () -> {
             if (!finished.compareAndSet(false, true)) return;
@@ -58,6 +60,7 @@ public final class ProbeReceiver extends BroadcastReceiver {
                 try { context.unbindService(connection[0]); }
                 catch (RuntimeException e) { report(context, "unbind_failed=" + e); }
             }
+            callbackHolder[0] = null;
             pending.finish();
         };
         handler.postDelayed(() -> {
@@ -99,7 +102,7 @@ public final class ProbeReceiver extends BroadcastReceiver {
                         request.writeString("mibrain");
                         request.writeString("tts_vendor_show");
                         request.writeString("{}");
-                        request.writeStrongBinder(new Binder() {
+                        Binder callback = new Binder() {
                             { attachInterface(null, CALLBACK); }
                             @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
                                     throws RemoteException {
@@ -111,6 +114,11 @@ public final class ProbeReceiver extends BroadcastReceiver {
                                 if (code != IBinder.FIRST_CALL_TRANSACTION) return super.onTransact(code, data, reply, flags);
                                 data.enforceInterface(CALLBACK);
                                 String result = data.readString();
+                                if ("__xiaoseek_selftest__".equals(result)) {
+                                    report(context, "callback_selftest_entered");
+                                    if (reply != null) reply.writeNoException();
+                                    return true;
+                                }
                                 Matcher matcher = Pattern.compile("\\\"code\\\"\\s*:\\s*(-?\\d+)").matcher(result == null ? "" : result);
                                 String status = matcher.find() ? matcher.group(1) : "unknown";
                                 report(context, "callback_code=" + status + " elapsed_ms=" +
@@ -119,7 +127,23 @@ public final class ProbeReceiver extends BroadcastReceiver {
                                 handler.post(cleanup);
                                 return true;
                             }
-                        });
+                        };
+                        callbackHolder[0] = callback;
+                        // Local Binder loopback: does NOT call the OEM service or UBus.
+                        Parcel selfReq = Parcel.obtain();
+                        Parcel selfReply = Parcel.obtain();
+                        try {
+                            selfReq.writeInterfaceToken(CALLBACK);
+                            selfReq.writeString("__xiaoseek_selftest__");
+                            if (!callback.transact(1, selfReq, selfReply, 0))
+                                throw new RemoteException("local callback selftest not accepted");
+                            selfReply.readException();
+                            report(context, "callback_selftest=ok");
+                        } finally {
+                            selfReply.recycle();
+                            selfReq.recycle();
+                        }
+                        request.writeStrongBinder(callback);
                         // Stock DEX: IMicoDeviceServiceInterface.Stub.onTransact code 12 = ubusRelay.
                         boolean sent = service.transact(12, request, response, 0);
                         if (!sent) throw new RemoteException("transaction 12 not accepted");
