@@ -22,8 +22,8 @@ import java.util.regex.Pattern;
 
 /** Read-only OEM Binder reachability test. Never sends ai_service/stopTts. */
 public final class ProbeReceiver extends BroadcastReceiver {
-    private static final String TAG = "XiaoSeekBinderV41";
-    private static final String LOG_FILE = "binder-v41.log";
+    private static final String TAG = "XiaoSeekBinderV42";
+    private static final String LOG_FILE = "binder-v42.log";
     private static final Object FILE_LOCK = new Object();
 
     // APK-private file: independent of logd/logcat. Records no identifiers or callback payload.
@@ -144,9 +144,10 @@ public final class ProbeReceiver extends BroadcastReceiver {
                             selfReq.recycle();
                         }
                         request.writeStrongBinder(callback);
-                        // Stock DEX: IMicoDeviceServiceInterface.Stub.onTransact code 12 = ubusRelay.
-                        boolean sent = service.transact(12, request, response, 0);
-                        if (!sent) throw new RemoteException("transaction 12 not accepted");
+                        // Verified against LX04 stock MicoLauncher.apk SHA256 803b6d89...:
+                        // code 12 = getBssid, code 15 = ubusRelay, code 16 = deviceRelay.
+                        boolean sent = service.transact(15, request, response, 0);
+                        if (!sent) throw new RemoteException("transaction 15 not accepted");
                         response.readException();
                         report(context, "transact_complete_ms=" + (SystemClock.elapsedRealtime() - started));
                     } catch (Exception e) {
