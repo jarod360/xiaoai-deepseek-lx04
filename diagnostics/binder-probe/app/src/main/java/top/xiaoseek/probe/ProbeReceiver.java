@@ -13,13 +13,30 @@ import android.os.Parcel;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.util.Log;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Read-only OEM Binder reachability test. Never sends ai_service/stopTts. */
 public final class ProbeReceiver extends BroadcastReceiver {
-    private static final String TAG = "XiaoSeekBinderV38";
+    private static final String TAG = "XiaoSeekBinderV39";
+    private static final String LOG_FILE = "binder-v39.log";
+    private static final Object FILE_LOCK = new Object();
+
+    // APK-private file: independent of logd/logcat. Records no identifiers or callback payload.
+    private static void report(Context context, String message) {
+        Log.i(TAG, message);
+        synchronized (FILE_LOCK) {
+            try (FileOutputStream out = context.openFileOutput(LOG_FILE, Context.MODE_APPEND)) {
+                out.write((System.currentTimeMillis() + " " + message + "\n").getBytes(StandardCharsets.UTF_8));
+            } catch (IOException e) {
+                Log.e(TAG, "local-log-write-failed", e);
+            }
+        }
+    }
     private static final String SERVICE = "com.xiaomi.micolauncher.common.services.deviceservice.MicoDeviceService";
     private static final String DESCRIPTOR = "com.xiaomi.mico.device.service.iface.IMicoDeviceServiceInterface";
     private static final String CALLBACK = "com.xiaomi.mico.device.service.iface.IUbusRelayCallback";
@@ -28,6 +45,7 @@ public final class ProbeReceiver extends BroadcastReceiver {
         final PendingResult pending = goAsync();
         // BroadcastReceiver's restricted Context cannot directly bind services.
         final Context context = receiverContext.getApplicationContext();
+        report(context, "receiver_entered");
         final long started = SystemClock.elapsedRealtime();
         final AtomicBoolean finished = new AtomicBoolean(false);
         final Handler handler = new Handler(Looper.getMainLooper());
@@ -38,19 +56,19 @@ public final class ProbeReceiver extends BroadcastReceiver {
             if (!finished.compareAndSet(false, true)) return;
             if (bound[0]) {
                 try { context.unbindService(connection[0]); }
-                catch (RuntimeException e) { Log.w(TAG, "unbind failed", e); }
+                catch (RuntimeException e) { report(context, "unbind_failed=" + e); }
             }
             pending.finish();
         };
         handler.postDelayed(() -> {
-            if (!finished.get()) Log.e(TAG, "timeout after 5000ms");
+            if (!finished.get()) report(context, "timeout_after_ms=5000");
             cleanup.run();
         }, 5000);
 
         connection[0] = new ServiceConnection() {
             @Override public void onServiceConnected(ComponentName name, IBinder service) {
                 if (finished.get()) return;
-                Log.i(TAG, "bound_ms=" + (SystemClock.elapsedRealtime() - started));
+                report(context, "bound_ms=" + (SystemClock.elapsedRealtime() - started));
                 new Thread(() -> {
                     Parcel request = Parcel.obtain();
                     Parcel response = Parcel.obtain();
@@ -74,7 +92,7 @@ public final class ProbeReceiver extends BroadcastReceiver {
                                 String result = data.readString();
                                 Matcher matcher = Pattern.compile("\\\"code\\\"\\s*:\\s*(-?\\d+)").matcher(result == null ? "" : result);
                                 String status = matcher.find() ? matcher.group(1) : "unknown";
-                                Log.i(TAG, "callback_code=" + status + " elapsed_ms=" +
+                                report(context, "callback_code=" + status + " elapsed_ms=" +
                                         (SystemClock.elapsedRealtime() - started));
                                 if (reply != null) reply.writeNoException();
                                 handler.post(cleanup);
@@ -85,9 +103,9 @@ public final class ProbeReceiver extends BroadcastReceiver {
                         boolean sent = service.transact(12, request, response, 0);
                         if (!sent) throw new RemoteException("transaction 12 not accepted");
                         response.readException();
-                        Log.i(TAG, "transact_complete_ms=" + (SystemClock.elapsedRealtime() - started));
+                        report(context, "transact_complete_ms=" + (SystemClock.elapsedRealtime() - started));
                     } catch (Exception e) {
-                        Log.e(TAG, "bind/transact failed after " + (SystemClock.elapsedRealtime() - started) + "ms", e);
+                        report(context, "bind_or_transact_failed_ms=" + (SystemClock.elapsedRealtime() - started) + " exception=" + e);
                         handler.post(cleanup);
                     } finally {
                         response.recycle();
@@ -96,17 +114,17 @@ public final class ProbeReceiver extends BroadcastReceiver {
                 }, "XiaoSeekBinderProbe").start();
             }
             @Override public void onServiceDisconnected(ComponentName name) {
-                Log.w(TAG, "OEM service disconnected");
+                report(context, "oem_service_disconnected");
                 handler.post(cleanup);
             }
         };
         try {
             Intent service = new Intent().setComponent(new ComponentName("com.xiaomi.micolauncher", SERVICE));
             bound[0] = context.bindService(service, connection[0], Context.BIND_AUTO_CREATE);
-            Log.i(TAG, "bind_requested=" + bound[0]);
+            report(context, "bind_requested=" + bound[0]);
             if (!bound[0]) handler.post(cleanup);
         } catch (Exception e) {
-            Log.e(TAG, "bind rejected", e);
+            report(context, "bind_rejected=" + e);
             handler.post(cleanup);
         }
     }
