@@ -34,6 +34,7 @@ type agent struct {
 	config     *xiaobot.Config
 	doorbell   *doorbellGuard
 	routing    *routeState
+	experimentalStopFallback bool
 	generation int
 	cancel     context.CancelFunc
 	pending    string
@@ -183,6 +184,7 @@ func (a *agent) answer(ctx context.Context, generation int, query string) {
 func main() {
 	configPath := flag.String("config", "/data/adb/lx04-deepseek/config.json", "private config")
 	restoreOnly := flag.Bool("restore-audio", false, "restore saved playback state and exit")
+	experimentalStopFallback := flag.Bool("experimental-stop-fallback", false, "Experimental: stop verified OEM fallback TTS through MiBrain UBus")
 	flag.Parse()
 	xiaobot.FixedZone()
 	gate := &devicevoice.AudioGate{Path: filepath.Join(filepath.Dir(*configPath), ".audio-restore.json")}
@@ -210,7 +212,7 @@ func main() {
 	client := openai.NewClient(cfg.OpenAIKey, cfg.OpenAIBackend, "")
 	client.GPTOptions = cfg.GPTOptions
 	answerer := &voiceanswer.Engine{Chat: client, Search: deepseekweb.NewClient(cfg.OpenAIKey), Model: cfg.Bot, Prompt: cfg.Prompt}
-	a := &agent{gate: gate, box: box, client: client, config: cfg, answerer: answerer, doorbell: newDoorbellGuard("http://127.0.0.1:7979/state"), routing: &routeState{}}
+	a := &agent{gate: gate, box: box, client: client, config: cfg, answerer: answerer, doorbell: newDoorbellGuard("http://127.0.0.1:7979/state"), routing: &routeState{}, experimentalStopFallback: *experimentalStopFallback}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 	go a.doorbell.watch(ctx, a.preemptForDoorbell)

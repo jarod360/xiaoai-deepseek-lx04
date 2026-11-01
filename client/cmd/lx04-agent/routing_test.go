@@ -32,3 +32,27 @@ func TestRoutingFallbackEvidence(t *testing.T) {
   if got:=devicevoice.IsConfirmedFallback(e);got!=tc.want {t.Errorf("task=%s text=%q got=%t",tc.task,tc.text,got)}
  }
 }
+
+func TestExperimentalFallbackStopGuard(t *testing.T) {
+ r:=&routeState{}
+ s:=&routeSession{id:"dialog-a",query:"为什么"}
+ r.current=s
+ r.playID=s.id
+ if r.canStopFallback(s) {t.Fatal("unconfirmed Toast must never stop TTS")}
+ s.fallback=true
+ if !r.canStopFallback(s) {t.Fatal("confirmed matching dialog should be eligible")}
+ s.stopIssued=true
+ if r.canStopFallback(s) {t.Fatal("must not issue duplicate stop")}
+ s.stopIssued=false
+ r.ambiguous=true
+ if r.canStopFallback(s) {t.Fatal("ambiguous audio must not be stopped")}
+ r.ambiguous=false
+ r.playID="dialog-b"
+ if r.canStopFallback(s) {t.Fatal("different dialog must not be stopped")}
+ r.playID=s.id
+ s.decided=true
+ if r.canStopFallback(s) {t.Fatal("finalized native dialog must not be stopped")}
+ s.decided=false
+ r.current=&routeSession{id:"new-dialog"}
+ if r.canStopFallback(s) {t.Fatal("stale dialog must not be stopped")}
+}
