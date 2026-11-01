@@ -34,10 +34,10 @@ jobs:
           gradle-version: '8.10.2'
       - uses: android-actions/setup-android@v3
       - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
-      - run: cd tools/binder-probe && gradle --no-daemon :app:assembleDebug
-      - run: sha256sum tools/binder-probe/app/build/outputs/apk/debug/app-debug.apk
+      - run: cd diagnostics/binder-probe && gradle --no-daemon :app:assembleDebug
+      - run: sha256sum diagnostics/binder-probe/app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
           name: lx04-binder-readonly-v38-apk
-          path: tools/binder-probe/app/build/outputs/apk/debug/app-debug.apk
+          path: diagnostics/binder-probe/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
