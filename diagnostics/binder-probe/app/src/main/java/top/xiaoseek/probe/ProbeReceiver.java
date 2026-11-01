@@ -22,8 +22,8 @@ import java.util.regex.Pattern;
 
 /** Read-only OEM Binder reachability test. Never sends ai_service/stopTts. */
 public final class ProbeReceiver extends BroadcastReceiver {
-    private static final String TAG = "XiaoSeekBinderV39";
-    private static final String LOG_FILE = "binder-v39.log";
+    private static final String TAG = "XiaoSeekBinderV40";
+    private static final String LOG_FILE = "binder-v40.log";
     private static final Object FILE_LOCK = new Object();
 
     // APK-private file: independent of logd/logcat. Records no identifiers or callback payload.
@@ -75,6 +75,26 @@ public final class ProbeReceiver extends BroadcastReceiver {
                     try {
                         if (!DESCRIPTOR.equals(service.getInterfaceDescriptor()))
                             throw new SecurityException("unexpected Binder descriptor");
+                        // Independent synchronous read-only API from the same OEM Binder.
+                        // The result does not depend on UBus or a callback.
+                        Parcel romReq = Parcel.obtain();
+                        Parcel romReply = Parcel.obtain();
+                        try {
+                            romReq.writeInterfaceToken(DESCRIPTOR);
+                            long romStarted = SystemClock.elapsedRealtime();
+                            if (!service.transact(4, romReq, romReply, 0))
+                                throw new RemoteException("getROMVersion transaction 4 rejected");
+                            romReply.readException();
+                            String rom = romReply.readString();
+                            report(context, "rom_query=ok elapsed_ms=" +
+                                    (SystemClock.elapsedRealtime() - romStarted) +
+                                    " nonempty=" + (rom != null && rom.length() > 0));
+                        } catch (Exception romErr) {
+                            report(context, "rom_query=error exception=" + romErr);
+                        } finally {
+                            romReply.recycle();
+                            romReq.recycle();
+                        }
                         request.writeInterfaceToken(DESCRIPTOR);
                         request.writeString("mibrain");
                         request.writeString("tts_vendor_show");
@@ -83,6 +103,7 @@ public final class ProbeReceiver extends BroadcastReceiver {
                             { attachInterface(null, CALLBACK); }
                             @Override protected boolean onTransact(int code, Parcel data, Parcel reply, int flags)
                                     throws RemoteException {
+                                report(context, "callback_entered code=" + code + " flags=" + flags);
                                 if (code == IBinder.INTERFACE_TRANSACTION) {
                                     reply.writeString(CALLBACK);
                                     return true;
