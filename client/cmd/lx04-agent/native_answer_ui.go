@@ -60,7 +60,10 @@ func dismissNativeBottom(ctx context.Context, started time.Time) {
  if ctx.Err()!=nil {return}
  log.Printf("native bottom focus matched after %s",time.Since(started).Round(time.Millisecond))
  backStarted:=time.Now()
- if err:=exec.CommandContext(ctx,"/data/local/tmp/xiaoseek-test/back-test-bin").Run();err!=nil {
+ backCtx,stopBack:=context.WithTimeout(ctx,3*time.Second)
+ err=exec.CommandContext(backCtx,"/data/local/tmp/xiaoseek-test/back-test-bin").Run()
+ stopBack()
+ if err!=nil {
   log.Printf("native bottom dismiss failed after %s: %v",time.Since(started).Round(time.Millisecond),err)
  } else {
   log.Printf("native bottom BACK completed after %s (command %s)",time.Since(started).Round(time.Millisecond),time.Since(backStarted).Round(time.Millisecond))
