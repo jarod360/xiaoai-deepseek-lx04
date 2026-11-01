@@ -6,7 +6,7 @@ android {
         applicationId 'top.xiaoseek.probe'
         minSdk 26
         targetSdk 27
-        versionCode 2
-        versionName '1.1-v39'
+        versionCode 3
+        versionName '1.2-v40'
     }
 }
