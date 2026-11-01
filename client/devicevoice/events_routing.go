@@ -47,8 +47,12 @@ func ParseRoutingEvent(line string) RoutingEvent {
  }
  return e
 }
-// These task IDs represent observed fallback candidates, not universal semantics.
+// An OEM Toast is a fallback only when its text clearly says it cannot answer.
+// Task IDs vary across these messages and are also used by non-fallback skills.
 func IsConfirmedFallback(e RoutingEvent) bool {
- return e.Kind=="semantic" && e.Namespace=="Template" && e.Name=="Toast" &&
-  (e.Task=="2424b468fff5dfa723ab2b4862f48cfd" || e.Task=="43234f6eb43a7e551ebc1f57a5b5bc75")
+ if e.Kind!="semantic" || e.Namespace!="Template" || e.Name!="Toast" {return false}
+ for _,phrase:=range []string{"问住","难住","回答不上","还在学习中"} {
+  if strings.Contains(e.Text,phrase) {return true}
+ }
+ return false
 }
