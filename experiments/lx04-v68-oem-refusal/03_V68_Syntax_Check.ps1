@@ -8,4 +8,12 @@ foreach($name in $files){
   if($errors.Count -eq 0){Write-Host "V68_PS_SYNTAX_PASS $name"}else{$failed=$true;Write-Host "V68_PS_SYNTAX_FAIL $name";foreach($e in $errors){Write-Host $e.Message}}
 }
 if($failed){throw 'V68_PS_SYNTAX_FAILED'}
+$node=Get-Command node -ErrorAction SilentlyContinue
+if($node){
+  & $node.Source --check (Join-Path $PSScriptRoot 'v68_cloud_refusal_trace.js')
+  if($LASTEXITCODE -ne 0){throw 'V68_JS_SYNTAX_FAILED'}
+  & $node.Source (Join-Path $PSScriptRoot 'test_v68_classifier_order.js')
+  if($LASTEXITCODE -ne 0){throw 'V68_CLASSIFIER_TEST_FAILED'}
+}else{throw 'NODE_REQUIRED_FOR_V68_TESTS'}
 Write-Host 'V68_PS_SYNTAX_ALL_PASS=1'
+Write-Host 'V68_JS_SYNTAX_AND_ORDER_TEST_PASS=1'
