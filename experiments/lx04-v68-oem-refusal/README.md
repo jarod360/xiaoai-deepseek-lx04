@@ -27,7 +27,7 @@ V67 最后报：
 
 解压到 `D:\Codex\XiaoSeek-apk`，目录为 `v68-oem-refusal-trace`。
 
-### 1. PowerShell 语法检查
+### 1. PowerShell、JS 语法与离线时序测试
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "D:\Codex\XiaoSeek-apk\v68-oem-refusal-trace\03_V68_Syntax_Check.ps1"
