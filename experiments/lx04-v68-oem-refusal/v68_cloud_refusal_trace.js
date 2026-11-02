@@ -42,7 +42,7 @@ var v68Counts = {
   speakMatchesToast:0, failOpen:0
 };
 function v68log(s) { console.log(String(s).replace(/[\r\n]/g, ' ')); }
-function v68event(s) { v68seq++; v68log('V68_EVENT seq=' + v68seq + ' ' + s); }
+function v68event(s) { v68Seq++; v68log('V68_EVENT seq=' + v68Seq + ' ' + s); }
 function v68id(ins) {
   try {
     var opt = ins.getDialogId();
@@ -167,7 +167,7 @@ function v68mark(ins) {
     s.speakSeen = true; s.speakText = speakText; s.speakMatch = speakMatch;
     v68Counts.speakInstruction++;
     v68event('SPEAK_INSTRUCTION dialog=' + alias + ' textLen=' + speakText.length +
-      ' refusalPattern=' + v68refusalIndex(speakText) + ' matchesToast=' + (speakMatch ? 1 : 0) +
+      ' refusalPattern=' + v68refusalIndex(speakText) +
       ' matchesToastAtEvent=' + (speakMatch ? 1 : 0) + ' earlyCandidateAlreadySeen=' + (s.earlyCandidate ? 1 : 0));
     v68evaluate(s);
     return;
@@ -251,4 +251,6 @@ function v68install() {
     } catch (e) { v68log('V68_INSTALL_ABORT ' + String(e).slice(0,180)); v68detach(); }
   });
 }
-if (typeof setImmediate === 'function') setImmediate(v68install); else v68install();
+if (typeof globalThis !== 'undefined' && globalThis.__V68_MOCK__ === true) {
+  globalThis.__V68_TEST__ = {norm:v68norm, refusalIndex:v68refusalIndex, evaluate:v68evaluate, revoke:v68revoke, counts:v68Counts, sessions:v68Sessions, order:v68Order, createSession:function(id){v68alias(id);return v68session(id);}};
+} else if (typeof setImmediate === 'function') setImmediate(v68install); else v68install();
