@@ -44,3 +44,13 @@ Interpretation:
 ## Acceptance boundaries
 
 V68 trace PASS is not refusal-classification PASS. `complete>0` means the event evidence matched the offline classifier, not that output was suppressed. Text/audio suppression and DeepSeek handoff remain unimplemented until per-dialog PCM gating and normal OEM skill regression are verified.
+
+
+## V68.1 offline correction (2026-11-02)
+
+- A Node order test caught and fixed a case-sensitive event-sequence counter typo before another device run.
+- The V68 aggregator now reevaluates one dialog as ASR, StartAnswer, Toast, Speak and FinishAnswer arrive in any order. It requires one exact whitelist Toast, exact Toast.query-to-ASR match, matching Speak, Start/FinishAnswer, and no native-skill conflict.
+- Multiple Toasts or a native conflict revoke a previously complete classification. Unknown Toast text, query mismatch, or Speak mismatch remain fail-open.
+- test_v68_classifier_order.js passed 10 checks, including Toast-before-ASR/StartAnswer, unknown text, query mismatch, Speak mismatch, multiple Toasts and native conflict.
+- node --check and sh -n passed locally. Windows PowerShell AST test remains to be run by the user.
+- This remains OBSERVE only. No OEM instruction suppression, audio gating, ASR rewrite, NLP replay or DeepSeek handoff has been implemented or tested on-device.
